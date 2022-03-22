@@ -43,7 +43,6 @@ class ImageTransfer:
         self.decoder_type = decoder_type
         self.resize_type = resize_type
         self.save_root = save_root
-        self.initialized = False
         self.transform_type = transform_type
 
         if isinstance(resize, tuple):
