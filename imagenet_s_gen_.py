@@ -9,10 +9,10 @@ import math
 import random
 import os
 from tqdm import tqdm
-try:
-    import mc
-except ImportError:
-    pass
+# try:
+#     import mc
+# except ImportError:
+#     pass
 import argparse
 
 
@@ -52,9 +52,6 @@ class ImageTransfer:
             self.resize = (resize, resize)
         self.color_mode = 'RGB'
 
-        new_meta_file_name = decoder_type + '_' + resize_type + '.txt'
-        new_meta_file = open(new_meta_file_name, 'w')
-
         with open(meta_file) as f:
             lines = f.readlines()
         self.num = len(lines)
@@ -63,21 +60,20 @@ class ImageTransfer:
             filename, label = line.rstrip().split()
             self.metas.append({'filename': filename, 'label': label})
 
-        save_dir = osp.join(save_root, decoder_type, resize_type)
+    def write_to_filesystem(self):
+        new_meta_file_name = self.decoder_type + '_' + self.resize_type + '.txt'
+        new_meta_file = open(new_meta_file_name, 'w')
+        save_dir = osp.join(self.save_root, self.decoder_type, self.resize_type)
         if not osp.exists(save_dir):
             os.makedirs(save_dir)
 
         for idx in tqdm(range(self.num)):
-            np_image = self.getimage(idx)
+            np_image, label = self.getimage(idx)
             save_file_name = self.metas[idx]['filename'] + '.npy'
             save_path = osp.join(save_dir, save_file_name)
             np.save(save_path, np_image)
 
-            label = self.metas[idx]['label']
-            new_meta_file.write(f'{osp.join(decoder_type, resize_type, save_file_name)} {label}'+'\n')
-
-
-
+            new_meta_file.write(f'{osp.join(self.decoder_type, self.resize_type, save_file_name)} {label}'+'\n')
 
     def getimage(self, idx):
         curr_meta = copy.deepcopy(self.metas[idx])
@@ -93,7 +89,7 @@ class ImageTransfer:
         y, x, h, w = self.get_params(img_after_decode)
         img_after_resize = self.image_resize(img_after_decode, y, x, h, w)
 
-        return img_after_resize
+        return img_after_resize, label
 
 
     def image_resize(self, img, y, x, h, w):
@@ -255,34 +251,37 @@ class ImageTransfer:
         j = (width - w) // 2
         return i, j, h, w
 
-
     def read_file(self, meta_dict):
-        self._init_memcached()
-        value = mc.pyvector()
-        self.mclient.Get(meta_dict['filename'], value)
-        value_str = mc.ConvertBuffer(value)
-        filebytes = np.frombuffer(value_str.tobytes(), dtype=np.uint8)
+        filebytes = np.fromfile(meta_dict['filename'], dtype=np.uint8)
         return filebytes
-
-    def _init_memcached(self):
-        if not self.initialized:
-            server_list_config_file = "/mnt/lustre/share/memcached_client/server_list.conf"
-            client_config_file = "/mnt/lustre/share/memcached_client/client.conf"
-            self.mclient = mc.MemcachedClient.GetInstance(server_list_config_file, client_config_file)
-            self.initialized = True
+    #     self._init_memcached()
+    #     value = mc.pyvector()
+    #     self.mclient.Get(meta_dict['filename'], value)
+    #     value_str = mc.ConvertBuffer(value)
+    #     filebytes = np.frombuffer(value_str.tobytes(), dtype=np.uint8)
+    #     return filebytes
+    #
+    # def _init_memcached(self):
+    #     if not self.initialized:
+    #         server_list_config_file = "/mnt/lustre/share/memcached_client/server_list.conf"
+    #         client_config_file = "/mnt/lustre/share/memcached_client/client.conf"
+    #         self.mclient = mc.MemcachedClient.GetInstance(server_list_config_file, client_config_file)
+    #         self.initialized = True
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Generate Dataset')
-    parser.add_argument('--decoder', required=False, type=str, default='pil')
-    parser.add_argument('--resize', required=False, type=str, default='pil-bilinear')
+    parser.add_argument('--decoder', required=False, type=str, default='pil', choices=['pil', 'opencv', 'ffmpeg'])
+    parser.add_argument('--resize', required=False, type=str, default='pil-bilinear',
+                        choices=['pil-bilinear', 'pil-nearest', 'pil-box', 'pil-hamming', 'pil-cubic', 'pil-lanczos',
+                                 'opencv-nearest', 'opencv-bilinear', 'opencv-area', 'opencv-cubic', 'opencv-lanczos'])
     parser.add_argument('--transform-type', required=False, type=str, default='val', choices=['val', 'train'])
     # train: Random Resize Crop
     # val: Resize (outsize * (8/7)) + Center Crop
 
     args = parser.parse_args()
 
-    ImageTransfer(root_dir='/mnt/lustre/share/images/val', meta_file='/mnt/lustre/share/images/meta/val.txt',
+    ImageTransfer(root_dir='/mnt/lustre/share/images/val', meta_file='/meta/val.txt',
                   save_root='/mnt/lustre/wangyan3/dataset-decoder-resize', decoder_type=args.decoder,
-                  transform_type=args.transform_type, resize_type=args.resize)
+                  transform_type=args.transform_type, resize_type=args.resize).write_to_filesystem()
 
